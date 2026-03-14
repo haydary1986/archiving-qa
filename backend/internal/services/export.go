@@ -49,9 +49,8 @@ func (s *ExportService) ExportToExcel(ctx context.Context, documents []models.Do
 	}
 
 	// Set right-to-left direction for Arabic
-	if err := f.SetSheetViewOptions(sheetName, 0, excelize.RightToLeft(true)); err != nil {
-		return nil, fmt.Errorf("failed to set RTL: %w", err)
-	}
+	rtl := true
+	f.SetSheetView(sheetName, 0, &excelize.ViewOptions{RightToLeft: &rtl})
 
 	// Define Arabic headers
 	headers := []string{

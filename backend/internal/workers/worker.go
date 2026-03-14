@@ -49,13 +49,17 @@ type WorkerServer struct {
 }
 
 func NewWorkerServer(db *sql.DB, cfg *config.Config) *WorkerServer {
-	return &WorkerServer{
-		db:          db,
-		cfg:         cfg,
-		ocrService:  services.NewOCRService(),
-		aiService:   services.NewAIService(&cfg.AI),
-		driveService: services.NewDriveService(&cfg.Google),
+	ws := &WorkerServer{
+		db:         db,
+		cfg:        cfg,
+		ocrService: services.NewOCRService(),
+		aiService:  services.NewAIService(&cfg.AI),
 	}
+	ds, err := services.NewDriveService(&cfg.Google)
+	if err == nil {
+		ws.driveService = ds
+	}
+	return ws
 }
 
 func (w *WorkerServer) Start() error {

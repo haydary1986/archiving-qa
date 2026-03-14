@@ -13,7 +13,7 @@ import (
 
 func Setup(r *gin.Engine, db *sql.DB, cfg *config.Config) {
 	// Services
-	driveService := services.NewDriveService(&cfg.Google)
+	driveService, _ := services.NewDriveService(&cfg.Google)
 	compressService := services.NewCompressService()
 
 	// Handlers

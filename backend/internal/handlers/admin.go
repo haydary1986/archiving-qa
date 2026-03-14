@@ -2,11 +2,12 @@ package handlers
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/haydary1986/archiving-qa/internal/models"
 )
@@ -507,12 +508,6 @@ func (h *ExportHandler) Export(c *gin.Context) {
 	})
 }
 
-func timeNow() interface{ Before(interface{}) bool } {
-	return nil // placeholder - will use time.Now() in actual comparison
-}
-
-func init() {
-	// Ensure json package is used
-	_ = json.Marshal
-	_ = bcrypt.DefaultCost
+func timeNow() time.Time {
+	return time.Now()
 }
