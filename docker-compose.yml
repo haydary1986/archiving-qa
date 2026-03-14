@@ -1,18 +1,13 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
-    container_name: archiving-db
     environment:
       POSTGRES_USER: archiving
       POSTGRES_PASSWORD: ${DB_PASSWORD:-archiving_secret}
       POSTGRES_DB: archiving_qa
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U archiving -d archiving_qa"]
@@ -23,12 +18,9 @@ services:
   # Redis Cache & Queue
   redis:
     image: redis:7-alpine
-    container_name: archiving-redis
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -41,7 +33,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: archiving-backend
     environment:
       SERVER_PORT: "8080"
       SERVER_MODE: "release"
@@ -77,7 +68,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: archiving-worker
     environment:
       RUN_WORKER: "true"
       DB_HOST: postgres
@@ -106,44 +96,15 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: archiving-frontend
     environment:
       API_BASE_URL: http://backend:8080/api/v1
-      NUXT_PUBLIC_API_BASE: ${PUBLIC_API_BASE:-http://localhost:8080/api/v1}
+      NUXT_PUBLIC_API_BASE: ${PUBLIC_API_BASE:-https://qa.uoturath.edu.iq/api/v1}
     ports:
       - "3000:3000"
     depends_on:
       - backend
     restart: unless-stopped
 
-  # Ollama (Local AI - Optional)
-  ollama:
-    image: ollama/ollama:latest
-    container_name: archiving-ollama
-    volumes:
-      - ollama_data:/root/.ollama
-    ports:
-      - "11434:11434"
-    restart: unless-stopped
-    profiles:
-      - ai
-
-  # Meilisearch (Full-Text Search - Optional)
-  meilisearch:
-    image: getmeili/meilisearch:latest
-    container_name: archiving-search
-    environment:
-      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-masterKey123}
-    volumes:
-      - meili_data:/meili_data
-    ports:
-      - "7700:7700"
-    restart: unless-stopped
-    profiles:
-      - search
-
 volumes:
   postgres_data:
   redis_data:
-  ollama_data:
-  meili_data:
