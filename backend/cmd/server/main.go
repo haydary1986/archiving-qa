@@ -88,7 +88,7 @@ func createDefaultAdmin(db *database.DB, cfg *config.Config) {
 	_, err := db.Exec(`
 		INSERT INTO users (email, password_hash, full_name, provider, role_id, is_active)
 		VALUES ('admin@university.edu.iq',
-		        '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
+		        '$2a$10$ELmQ31yqBqzOUMfCxKZxV.eLFZ2vaBJkdi1RWH1XO4R6tZwOSK7Tm',
 		        'مدير النظام', 'local',
 		        'a0000000-0000-0000-0000-000000000001', true)
 	`)
