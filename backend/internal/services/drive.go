@@ -59,6 +59,7 @@ func (s *DriveService) UploadFile(ctx context.Context, fileName string, content 
 	created, err := s.client.Files.Create(driveFile).
 		Media(content).
 		Fields("id, webViewLink").
+		SupportsAllDrives(true).
 		Context(ctx).
 		Do()
 	if err != nil {
@@ -72,6 +73,7 @@ func (s *DriveService) UploadFile(ctx context.Context, fileName string, content 
 // The caller is responsible for closing the returned ReadCloser.
 func (s *DriveService) DownloadFile(ctx context.Context, fileID string) (io.ReadCloser, error) {
 	resp, err := s.client.Files.Get(fileID).
+		SupportsAllDrives(true).
 		Context(ctx).
 		Download()
 	if err != nil {
@@ -84,6 +86,7 @@ func (s *DriveService) DownloadFile(ctx context.Context, fileID string) (io.Read
 // DeleteFile permanently deletes a file from Google Drive.
 func (s *DriveService) DeleteFile(ctx context.Context, fileID string) error {
 	err := s.client.Files.Delete(fileID).
+		SupportsAllDrives(true).
 		Context(ctx).
 		Do()
 	if err != nil {
@@ -102,6 +105,7 @@ func (s *DriveService) CreateShareLink(ctx context.Context, fileID string) (stri
 	}
 
 	_, err := s.client.Permissions.Create(fileID, perm).
+		SupportsAllDrives(true).
 		Context(ctx).
 		Do()
 	if err != nil {
@@ -110,6 +114,7 @@ func (s *DriveService) CreateShareLink(ctx context.Context, fileID string) (stri
 
 	file, err := s.client.Files.Get(fileID).
 		Fields("webViewLink").
+		SupportsAllDrives(true).
 		Context(ctx).
 		Do()
 	if err != nil {
@@ -134,6 +139,7 @@ func (s *DriveService) CreateFolder(ctx context.Context, name string, parentID s
 
 	created, err := s.client.Files.Create(folder).
 		Fields("id").
+		SupportsAllDrives(true).
 		Context(ctx).
 		Do()
 	if err != nil {
