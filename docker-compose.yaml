@@ -54,6 +54,16 @@ services:
       AI_API_KEY: ${AI_API_KEY:-}
       AI_BASE_URL: ${AI_BASE_URL:-http://ollama:11434}
       AI_MODEL: ${AI_MODEL:-llama3}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.archiving-backend-http.entryPoints=http"
+      - "traefik.http.routers.archiving-backend-http.rule=Host(`api-qa.uoturath.edu.iq`)"
+      - "traefik.http.routers.archiving-backend-http.middlewares=redirect-to-https"
+      - "traefik.http.routers.archiving-backend-https.entryPoints=https"
+      - "traefik.http.routers.archiving-backend-https.rule=Host(`api-qa.uoturath.edu.iq`)"
+      - "traefik.http.routers.archiving-backend-https.tls=true"
+      - "traefik.http.routers.archiving-backend-https.tls.certresolver=letsencrypt"
+      - "traefik.http.services.archiving-backend.loadbalancer.server.port=8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,6 +107,16 @@ services:
     environment:
       API_BASE_URL: http://backend:8080/api/v1
       NUXT_PUBLIC_API_BASE: ${PUBLIC_API_BASE:-https://api-qa.uoturath.edu.iq/api/v1}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.archiving-frontend-http.entryPoints=http"
+      - "traefik.http.routers.archiving-frontend-http.rule=Host(`qa.uoturath.edu.iq`)"
+      - "traefik.http.routers.archiving-frontend-http.middlewares=redirect-to-https"
+      - "traefik.http.routers.archiving-frontend-https.entryPoints=https"
+      - "traefik.http.routers.archiving-frontend-https.rule=Host(`qa.uoturath.edu.iq`)"
+      - "traefik.http.routers.archiving-frontend-https.tls=true"
+      - "traefik.http.routers.archiving-frontend-https.tls.certresolver=letsencrypt"
+      - "traefik.http.services.archiving-frontend.loadbalancer.server.port=3000"
     depends_on:
       - backend
     restart: unless-stopped
