@@ -87,7 +87,7 @@
         </div>
       </template>
 
-      <div class="space-y-4">
+      <div class="space-y-5">
         <!-- Connection Status -->
         <div v-if="driveStatus.connected" class="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
           <UIcon name="i-heroicons-check-circle" class="text-green-500 text-xl flex-shrink-0" />
@@ -100,26 +100,57 @@
           </UButton>
         </div>
 
-        <div v-else class="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-          <UIcon name="i-heroicons-cloud" class="text-gray-400 text-xl flex-shrink-0" />
+        <div v-else class="flex items-center gap-3 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+          <UIcon name="i-heroicons-exclamation-triangle" class="text-yellow-500 text-xl flex-shrink-0" />
           <div class="flex-1">
-            <p class="font-medium">غير متصل</p>
-            <p class="text-sm text-gray-500">قم بربط حسابك في Google Drive لرفع الملفات تلقائياً</p>
+            <p class="font-medium text-yellow-700 dark:text-yellow-400">غير متصل بـ Google Drive</p>
+            <p class="text-sm text-yellow-600 dark:text-yellow-500">لن يتم رفع الملفات إلى Drive حتى يتم الربط</p>
           </div>
         </div>
 
-        <!-- Step 1: Enter Client Credentials -->
+        <!-- Setup Instructions -->
+        <div v-if="!driveStatus.connected" class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-3">
+          <p class="text-sm text-blue-700 dark:text-blue-400 font-medium">كيفية إعداد Google Drive:</p>
+          <ol class="text-sm text-blue-600 dark:text-blue-400 space-y-2 list-decimal list-inside">
+            <li>اذهب إلى <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline font-medium">Google Cloud Console &rarr; Credentials</a></li>
+            <li>اضغط <strong>Create Credentials</strong> &rarr; <strong>OAuth client ID</strong></li>
+            <li>اختر <strong>Web application</strong> كنوع التطبيق</li>
+            <li>
+              أضف الرابط التالي ضمن <strong>Authorized redirect URIs</strong>:
+              <div class="mt-1 flex items-center gap-2">
+                <code class="bg-blue-100 dark:bg-blue-800 px-2 py-1 rounded text-xs block" dir="ltr">{{ redirectURI }}</code>
+                <UButton size="2xs" variant="ghost" icon="i-heroicons-clipboard" @click="copyRedirectURI" />
+              </div>
+            </li>
+            <li>بعد الإنشاء، حمّل ملف JSON أو انسخ Client ID و Secret</li>
+          </ol>
+        </div>
+
+        <!-- Upload JSON or Manual Entry -->
         <div v-if="!driveStatus.connected" class="space-y-4">
-          <div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-            <p class="text-sm text-blue-700 dark:text-blue-400 mb-2 font-medium">خطوات الربط:</p>
-            <ol class="text-sm text-blue-600 dark:text-blue-400 space-y-1 list-decimal list-inside">
-              <li>اذهب إلى <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline font-medium">Google Cloud Console</a></li>
-              <li>أنشئ OAuth 2.0 Client ID (نوع Web Application)</li>
-              <li>أضف <code class="bg-blue-100 dark:bg-blue-800 px-1 rounded text-xs">{{ redirectURI }}</code> ضمن Authorized redirect URIs</li>
-              <li>انسخ Client ID و Client Secret وألصقهما أدناه</li>
-            </ol>
+          <!-- JSON File Upload -->
+          <UFormGroup label="رفع ملف OAuth JSON (من Google Cloud Console)">
+            <div class="flex items-center gap-3">
+              <label class="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                <UIcon name="i-heroicons-arrow-up-tray" />
+                <span class="text-sm">اختر ملف JSON</span>
+                <input type="file" accept=".json,application/json" class="hidden" @change="handleJsonUpload" />
+              </label>
+              <span v-if="jsonFileName" class="text-sm text-green-600">{{ jsonFileName }}</span>
+            </div>
+            <p class="text-xs text-gray-500 mt-1">
+              الملف الذي تحمّله من Google Cloud Console بعد إنشاء OAuth Client ID
+            </p>
+          </UFormGroup>
+
+          <!-- Divider -->
+          <div class="flex items-center gap-3">
+            <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
+            <span class="text-xs text-gray-400">أو أدخل يدوياً</span>
+            <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
           </div>
 
+          <!-- Manual Entry -->
           <UFormGroup label="Client ID">
             <UInput v-model="driveForm.client_id" placeholder="xxxxx.apps.googleusercontent.com" dir="ltr" />
           </UFormGroup>
@@ -129,15 +160,13 @@
           </UFormGroup>
 
           <UFormGroup label="معرف مجلد Drive (اختياري)">
-            <UInput v-model="driveForm.folder_id" placeholder="مثال: 1PHRruHdL6gelbM4NCNz7fgKGqMxw50_R" dir="ltr" />
-            <p class="text-xs text-gray-500 mt-1">معرف المجلد من رابط Google Drive. اتركه فارغاً للرفع في الجذر</p>
+            <UInput v-model="driveForm.folder_id" dir="ltr" />
+            <p class="text-xs text-gray-500 mt-1">انسخ المعرف من رابط المجلد في Google Drive. مثال: من الرابط <code class="text-xs" dir="ltr">drive.google.com/drive/folders/<strong>ABC123</strong></code> المعرف هو <code class="text-xs" dir="ltr">ABC123</code></p>
           </UFormGroup>
 
-          <div class="flex gap-2">
-            <UButton @click="saveAndConnect" :loading="driveSaving" icon="i-heroicons-link" color="blue">
-              حفظ وربط Google Drive
-            </UButton>
-          </div>
+          <UButton @click="saveAndConnect" :loading="driveSaving" icon="i-heroicons-link" color="blue" block>
+            حفظ وربط Google Drive
+          </UButton>
         </div>
 
         <!-- Folder config when connected -->
@@ -147,7 +176,7 @@
               <UInput v-model="driveFolderID" placeholder="معرف المجلد" dir="ltr" class="flex-1" />
               <UButton @click="updateFolder" :loading="folderSaving" size="sm">تحديث</UButton>
             </div>
-            <p class="text-xs text-gray-500 mt-1">معرف المجلد الذي سيتم رفع الملفات إليه</p>
+            <p class="text-xs text-gray-500 mt-1">المجلد الذي سيتم رفع الملفات إليه تلقائياً</p>
           </UFormGroup>
         </div>
       </div>
@@ -235,6 +264,7 @@ const driveFolderID = ref('')
 const driveSaving = ref(false)
 const driveDisconnecting = ref(false)
 const folderSaving = ref(false)
+const jsonFileName = ref('')
 
 const apiBase = runtimeConfig.public.apiBase as string || ''
 const redirectURI = computed(() => {
@@ -319,6 +349,37 @@ const saveRole = async () => {
 }
 
 // Drive functions
+const copyRedirectURI = () => {
+  navigator.clipboard.writeText(redirectURI.value)
+  toast.add({ title: 'تم نسخ الرابط', color: 'green' })
+}
+
+const handleJsonUpload = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  jsonFileName.value = file.name
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const json = JSON.parse(e.target?.result as string)
+      // Support both formats: { web: { ... } } and { installed: { ... } } and flat { client_id, client_secret }
+      const data = json.web || json.installed || json
+      if (data.client_id && data.client_secret) {
+        driveForm.client_id = data.client_id
+        driveForm.client_secret = data.client_secret
+        toast.add({ title: 'تم قراءة بيانات الاعتماد من الملف', color: 'green' })
+      } else {
+        toast.add({ title: 'الملف لا يحتوي على client_id و client_secret', color: 'red' })
+      }
+    } catch {
+      toast.add({ title: 'الملف غير صالح - يجب أن يكون JSON', color: 'red' })
+    }
+  }
+  reader.readAsText(file)
+}
+
 const fetchDriveStatus = async () => {
   try {
     driveStatus.value = await api.get('/admin/drive/status')
@@ -328,7 +389,7 @@ const fetchDriveStatus = async () => {
 
 const saveAndConnect = async () => {
   if (!driveForm.client_id || !driveForm.client_secret) {
-    toast.add({ title: 'يرجى إدخال Client ID و Client Secret', color: 'red' })
+    toast.add({ title: 'يرجى إدخال Client ID و Client Secret أو رفع ملف JSON', color: 'red' })
     return
   }
   driveSaving.value = true
@@ -348,7 +409,7 @@ const disconnectDrive = async () => {
   try {
     await api.post('/admin/drive/disconnect')
     driveStatus.value = { connected: false, email: '', folder_id: '' }
-    toast.add({ title: 'تم قطع الاتصال', color: 'green' })
+    toast.add({ title: 'تم قطع الاتصال بـ Google Drive', color: 'green' })
   } catch {
     toast.add({ title: 'خطأ', color: 'red' })
   } finally {
@@ -382,7 +443,6 @@ const fetchData = async () => {
 
 onMounted(async () => {
   await Promise.all([fetchData(), fetchDriveStatus()])
-  // Show success if redirected from OAuth callback
   if (route.query.drive === 'connected') {
     toast.add({ title: 'تم ربط Google Drive بنجاح', color: 'green' })
     await fetchDriveStatus()
