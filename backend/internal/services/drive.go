@@ -17,11 +17,23 @@ type DriveService struct {
 }
 
 // NewDriveService initializes a new DriveService using the provided Google configuration.
-// It authenticates using a service account key file.
+// It supports both a file path and inline JSON for the service account key.
 func NewDriveService(cfg *config.GoogleConfig) (*DriveService, error) {
+	if cfg.ServiceAccountKey == "" {
+		return nil, fmt.Errorf("google service account key not configured")
+	}
+
 	ctx := context.Background()
 
-	srv, err := drive.NewService(ctx, option.WithCredentialsFile(cfg.ServiceAccountKey))
+	var opts []option.ClientOption
+	// If it starts with '{', treat as inline JSON; otherwise as file path
+	if len(cfg.ServiceAccountKey) > 0 && cfg.ServiceAccountKey[0] == '{' {
+		opts = append(opts, option.WithCredentialsJSON([]byte(cfg.ServiceAccountKey)))
+	} else {
+		opts = append(opts, option.WithCredentialsFile(cfg.ServiceAccountKey))
+	}
+
+	srv, err := drive.NewService(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create drive service: %w", err)
 	}
