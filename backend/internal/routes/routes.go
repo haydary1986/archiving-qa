@@ -27,6 +27,7 @@ func Setup(r *gin.Engine, db *sql.DB, cfg *config.Config) {
 	tagHandler := handlers.NewTagHandler(db)
 	shareHandler := handlers.NewShareHandler(db)
 	exportHandler := handlers.NewExportHandler(db)
+	queueHandler := handlers.NewQueueHandler(db)
 
 	// Middleware
 	authMiddleware := middleware.NewAuthMiddleware(cfg.JWT.Secret)
@@ -131,6 +132,12 @@ func Setup(r *gin.Engine, db *sql.DB, cfg *config.Config) {
 
 		// Audit logs
 		admin.GET("/audit-logs", adminHandler.ListAuditLogs)
+
+		// Queue / Jobs
+		admin.GET("/queue", queueHandler.ListJobs)
+		admin.GET("/queue/stats", queueHandler.QueueStats)
+		admin.POST("/queue/:id/retry", queueHandler.RetryJob)
+		admin.DELETE("/queue/completed", queueHandler.ClearCompleted)
 
 		// System settings
 		admin.GET("/settings", adminHandler.GetSettings)

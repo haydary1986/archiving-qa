@@ -61,6 +61,7 @@ func (db *DB) RunMigrations() error {
 		migrationCreateSystemSettingsTable,
 		migrationCreateShareLinksTable,
 		migrationCreateUserCategoryAccess,
+		migrationCreateJobsTable,
 		migrationSeedDefaultData,
 	}
 

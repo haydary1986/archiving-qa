@@ -57,6 +57,11 @@
             <span>الإعدادات</span>
           </NuxtLink>
 
+          <NuxtLink to="/admin/queue" class="sidebar-link" active-class="active">
+            <UIcon name="i-heroicons-queue-list" class="w-5 h-5" />
+            <span>الطابور</span>
+          </NuxtLink>
+
           <NuxtLink to="/admin/trash" class="sidebar-link" active-class="active" v-if="authStore.isSuperAdmin">
             <UIcon name="i-heroicons-trash" class="w-5 h-5" />
             <span>سلة المهملات</span>
@@ -142,6 +147,7 @@ const pageTitle = computed(() => {
     '/admin/categories': 'التصنيفات',
     '/admin/audit': 'سجل التدقيق',
     '/admin/settings': 'إعدادات النظام',
+    '/admin/queue': 'الطابور والعمليات',
     '/admin/trash': 'سلة المهملات',
   }
   return titles[route.path] || 'نظام الأرشفة'

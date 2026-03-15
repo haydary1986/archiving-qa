@@ -88,13 +88,38 @@ func (w *WorkerServer) Start() error {
 	return srv.Run(mux)
 }
 
+func (w *WorkerServer) createJob(taskType, status string, documentID, fileID *string) string {
+	var jobID string
+	w.db.QueryRow(`
+		INSERT INTO jobs (task_type, status, document_id, file_id)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`, taskType, status, documentID, fileID).Scan(&jobID)
+	return jobID
+}
+
+func (w *WorkerServer) updateJobStatus(jobID, status, errorMsg string) {
+	if jobID == "" {
+		return
+	}
+	switch status {
+	case "processing":
+		w.db.Exec("UPDATE jobs SET status = $1, started_at = NOW(), attempts = attempts + 1 WHERE id = $2", status, jobID)
+	case "completed":
+		w.db.Exec("UPDATE jobs SET status = $1, completed_at = NOW() WHERE id = $2", status, jobID)
+	case "failed":
+		w.db.Exec("UPDATE jobs SET status = $1, error_message = $2, completed_at = NOW() WHERE id = $3", status, errorMsg, jobID)
+	}
+}
+
 func (w *WorkerServer) HandleOCR(ctx context.Context, t *asynq.Task) error {
 	var payload OCRPayload
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
 		return fmt.Errorf("failed to unmarshal OCR payload: %w", err)
 	}
 
-	log.Printf("Processing OCR for file: %s", payload.FileID)
+	jobID := w.createJob(TaskOCRProcess, "processing", &payload.DocumentID, &payload.FileID)
+	log.Printf("Processing OCR for file: %s (job: %s)", payload.FileID, jobID)
 
 	// Update status to processing
 	w.db.Exec("UPDATE files SET ocr_status = 'processing' WHERE id = $1", payload.FileID)
@@ -109,6 +134,7 @@ func (w *WorkerServer) HandleOCR(ctx context.Context, t *asynq.Task) error {
 		reader, err := w.driveService.DownloadFile(ctx, driveFileID)
 		if err != nil {
 			w.db.Exec("UPDATE files SET ocr_status = 'failed' WHERE id = $1", payload.FileID)
+			w.updateJobStatus(jobID, "failed", err.Error())
 			return fmt.Errorf("failed to download file: %w", err)
 		}
 		defer reader.Close()
@@ -116,6 +142,7 @@ func (w *WorkerServer) HandleOCR(ctx context.Context, t *asynq.Task) error {
 		tmpFile := filepath.Join(os.TempDir(), payload.FileID)
 		f, err := os.Create(tmpFile)
 		if err != nil {
+			w.updateJobStatus(jobID, "failed", err.Error())
 			return err
 		}
 		io.Copy(f, reader)
@@ -135,6 +162,7 @@ func (w *WorkerServer) HandleOCR(ctx context.Context, t *asynq.Task) error {
 
 	if err != nil {
 		w.db.Exec("UPDATE files SET ocr_status = 'failed' WHERE id = $1", payload.FileID)
+		w.updateJobStatus(jobID, "failed", err.Error())
 		return fmt.Errorf("OCR failed: %w", err)
 	}
 
@@ -146,6 +174,7 @@ func (w *WorkerServer) HandleOCR(ctx context.Context, t *asynq.Task) error {
 		text, payload.DocumentID)
 
 	log.Printf("OCR completed for file: %s", payload.FileID)
+	w.updateJobStatus(jobID, "completed", "")
 
 	// Enqueue AI analysis
 	aiPayload, _ := json.Marshal(AIPayload{DocumentID: payload.DocumentID, Text: text})
@@ -166,11 +195,13 @@ func (w *WorkerServer) HandleAIAnalyze(ctx context.Context, t *asynq.Task) error
 		return fmt.Errorf("failed to unmarshal AI payload: %w", err)
 	}
 
-	log.Printf("AI analyzing document: %s", payload.DocumentID)
+	jobID := w.createJob(TaskAIAnalyze, "processing", &payload.DocumentID, nil)
+	log.Printf("AI analyzing document: %s (job: %s)", payload.DocumentID, jobID)
 
 	result, err := w.aiService.AnalyzeDocument(ctx, payload.Text)
 	if err != nil {
 		log.Printf("AI analysis failed for document %s: %v", payload.DocumentID, err)
+		w.updateJobStatus(jobID, "failed", err.Error())
 		return fmt.Errorf("AI analysis failed: %w", err)
 	}
 
@@ -179,6 +210,7 @@ func (w *WorkerServer) HandleAIAnalyze(ctx context.Context, t *asynq.Task) error
 		resultJSON, payload.DocumentID)
 
 	log.Printf("AI analysis completed for document: %s", payload.DocumentID)
+	w.updateJobStatus(jobID, "completed", "")
 	return nil
 }
 

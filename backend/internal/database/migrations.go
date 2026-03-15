@@ -270,6 +270,29 @@ CREATE TABLE IF NOT EXISTS user_category_access (
 CREATE INDEX IF NOT EXISTS idx_user_cat_access_user ON user_category_access(user_id);
 `
 
+const migrationCreateJobsTable = `
+CREATE TABLE IF NOT EXISTS jobs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    task_type VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+    file_id UUID REFERENCES files(id) ON DELETE CASCADE,
+    payload JSONB DEFAULT '{}',
+    result JSONB DEFAULT '{}',
+    error_message TEXT DEFAULT '',
+    attempts INT NOT NULL DEFAULT 0,
+    max_retries INT NOT NULL DEFAULT 3,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_type ON jobs(task_type);
+CREATE INDEX IF NOT EXISTS idx_jobs_document ON jobs(document_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
+`
+
 const migrationSeedDefaultData = `
 -- Seed default roles
 INSERT INTO roles (id, name, description) VALUES
