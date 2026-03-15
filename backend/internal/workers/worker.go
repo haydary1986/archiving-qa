@@ -55,10 +55,7 @@ func NewWorkerServer(db *sql.DB, cfg *config.Config) *WorkerServer {
 		ocrService: services.NewOCRService(),
 		aiService:  services.NewAIService(&cfg.AI),
 	}
-	ds, err := services.NewDriveService(&cfg.Google)
-	if err == nil {
-		ws.driveService = ds
-	}
+	ws.driveService = services.GetDriveService(db, cfg.Google.ServiceAccountKey, cfg.Google.DriveFolderID, cfg.Google.ImpersonateEmail)
 	return ws
 }
 

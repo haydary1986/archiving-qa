@@ -2,13 +2,14 @@ package services
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
 
-
-	"github.com/haydary1986/archiving-qa/internal/config"
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
@@ -20,36 +21,78 @@ type DriveService struct {
 	rootFolderID string
 }
 
-// NewDriveService initializes a new DriveService using the provided Google configuration.
-// It supports both a file path and inline JSON for the service account key.
-// If GOOGLE_IMPERSONATE_EMAIL is set, the service account will impersonate that user
-// (requires domain-wide delegation enabled in Google Admin Console).
-func NewDriveService(cfg *config.GoogleConfig) (*DriveService, error) {
-	if cfg.ServiceAccountKey == "" {
-		return nil, fmt.Errorf("google service account key not configured")
+// NewDriveServiceFromOAuth creates a DriveService using OAuth2 tokens stored in the database.
+// This is the preferred method — triggered by the "Connect Drive" button in settings.
+func NewDriveServiceFromOAuth(db *sql.DB) (*DriveService, error) {
+	var clientID, clientSecret, tokenStr, folderID string
+	db.QueryRow("SELECT value FROM system_settings WHERE key = 'drive_client_id'").Scan(&clientID)
+	db.QueryRow("SELECT value FROM system_settings WHERE key = 'drive_client_secret'").Scan(&clientSecret)
+	db.QueryRow("SELECT value FROM system_settings WHERE key = 'drive_oauth_token'").Scan(&tokenStr)
+	db.QueryRow("SELECT value FROM system_settings WHERE key = 'drive_folder_id'").Scan(&folderID)
+
+	if clientID == "" || clientSecret == "" || tokenStr == "" {
+		return nil, fmt.Errorf("Drive OAuth not configured")
+	}
+
+	var token oauth2.Token
+	if err := json.Unmarshal([]byte(tokenStr), &token); err != nil {
+		return nil, fmt.Errorf("invalid stored token: %w", err)
+	}
+
+	cfg := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Scopes:       []string{drive.DriveScope},
+		Endpoint:     google.Endpoint,
+	}
+
+	tokenSource := cfg.TokenSource(context.Background(), &token)
+
+	// Check if token was refreshed and save the new one
+	newToken, err := tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed to refresh token: %w", err)
+	}
+	if newToken.AccessToken != token.AccessToken {
+		newTokenJSON, _ := json.Marshal(newToken)
+		db.Exec(`UPDATE system_settings SET value = $1, updated_at = NOW() WHERE key = 'drive_oauth_token'`, string(newTokenJSON))
+	}
+
+	srv, err := drive.NewService(context.Background(), option.WithTokenSource(tokenSource))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create drive service: %w", err)
+	}
+
+	log.Println("Drive: connected via OAuth2")
+	return &DriveService{
+		client:       srv,
+		rootFolderID: folderID,
+	}, nil
+}
+
+// NewDriveServiceFromServiceAccount creates a DriveService using a service account key.
+// Supports both file path and inline JSON. If impersonateEmail is set, uses domain-wide delegation.
+func NewDriveServiceFromServiceAccount(saKey, folderID, impersonateEmail string) (*DriveService, error) {
+	if saKey == "" {
+		return nil, fmt.Errorf("service account key not configured")
 	}
 
 	ctx := context.Background()
-
-	// Read key data
 	var keyData []byte
-	if len(cfg.ServiceAccountKey) > 0 && cfg.ServiceAccountKey[0] == '{' {
-		keyData = []byte(cfg.ServiceAccountKey)
+	if len(saKey) > 0 && saKey[0] == '{' {
+		keyData = []byte(saKey)
 	} else {
 		var err error
-		keyData, err = os.ReadFile(cfg.ServiceAccountKey)
+		keyData, err = os.ReadFile(saKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read service account key file: %w", err)
 		}
 	}
 
-	impersonateEmail := cfg.ImpersonateEmail
-
 	var srv *drive.Service
 	var err error
 
 	if impersonateEmail != "" {
-		// Use domain-wide delegation to impersonate a real user (avoids storage quota issue)
 		log.Printf("Drive: using impersonation as %s", impersonateEmail)
 		jwtCfg, err := google.JWTConfigFromJSON(keyData, drive.DriveScope)
 		if err != nil {
@@ -62,7 +105,6 @@ func NewDriveService(cfg *config.GoogleConfig) (*DriveService, error) {
 			return nil, fmt.Errorf("failed to create drive service with impersonation: %w", err)
 		}
 	} else {
-		// Direct service account (works with Shared Drives)
 		log.Println("Drive: using direct service account (requires Shared Drive)")
 		srv, err = drive.NewService(ctx, option.WithCredentialsJSON(keyData))
 		if err != nil {
@@ -72,12 +114,34 @@ func NewDriveService(cfg *config.GoogleConfig) (*DriveService, error) {
 
 	return &DriveService{
 		client:       srv,
-		rootFolderID: cfg.DriveFolderID,
+		rootFolderID: folderID,
 	}, nil
 }
 
+// GetDriveService tries OAuth2 first (from DB), then falls back to service account (from env).
+// This is the main entry point used by routes.Setup.
+func GetDriveService(db *sql.DB, saKey, folderID, impersonateEmail string) *DriveService {
+	// Try OAuth2 first
+	ds, err := NewDriveServiceFromOAuth(db)
+	if err == nil {
+		return ds
+	}
+
+	// Fall back to service account
+	if saKey != "" {
+		ds, err = NewDriveServiceFromServiceAccount(saKey, folderID, impersonateEmail)
+		if err != nil {
+			log.Printf("Drive service account init failed: %v", err)
+			return nil
+		}
+		return ds
+	}
+
+	log.Println("Drive: not configured (no OAuth token and no service account)")
+	return nil
+}
+
 // UploadFile uploads a file to Google Drive within the specified folder.
-// It returns the file ID, web view link, and any error encountered.
 func (s *DriveService) UploadFile(ctx context.Context, fileName string, content io.Reader, mimeType string, folderID string) (fileID string, webViewLink string, err error) {
 	if folderID == "" {
 		folderID = s.rootFolderID
@@ -102,7 +166,6 @@ func (s *DriveService) UploadFile(ctx context.Context, fileName string, content 
 }
 
 // DownloadFile downloads a file from Google Drive by its file ID.
-// The caller is responsible for closing the returned ReadCloser.
 func (s *DriveService) DownloadFile(ctx context.Context, fileID string) (io.ReadCloser, error) {
 	resp, err := s.client.Files.Get(fileID).
 		SupportsAllDrives(true).
@@ -111,25 +174,18 @@ func (s *DriveService) DownloadFile(ctx context.Context, fileID string) (io.Read
 	if err != nil {
 		return nil, fmt.Errorf("failed to download file from drive: %w", err)
 	}
-
 	return resp.Body, nil
 }
 
 // DeleteFile permanently deletes a file from Google Drive.
 func (s *DriveService) DeleteFile(ctx context.Context, fileID string) error {
-	err := s.client.Files.Delete(fileID).
+	return s.client.Files.Delete(fileID).
 		SupportsAllDrives(true).
 		Context(ctx).
 		Do()
-	if err != nil {
-		return fmt.Errorf("failed to delete file from drive: %w", err)
-	}
-
-	return nil
 }
 
 // CreateShareLink creates a publicly accessible link for the specified file.
-// It sets the file permission to "anyone with the link can read".
 func (s *DriveService) CreateShareLink(ctx context.Context, fileID string) (string, error) {
 	perm := &drive.Permission{
 		Type: "anyone",
@@ -157,7 +213,6 @@ func (s *DriveService) CreateShareLink(ctx context.Context, fileID string) (stri
 }
 
 // CreateFolder creates a new folder in Google Drive under the specified parent.
-// It returns the newly created folder's ID.
 func (s *DriveService) CreateFolder(ctx context.Context, name string, parentID string) (string, error) {
 	if parentID == "" {
 		parentID = s.rootFolderID

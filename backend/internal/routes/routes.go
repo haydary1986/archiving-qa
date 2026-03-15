@@ -12,8 +12,8 @@ import (
 )
 
 func Setup(r *gin.Engine, db *sql.DB, cfg *config.Config) {
-	// Services
-	driveService, _ := services.NewDriveService(&cfg.Google)
+	// Services - try OAuth first, fall back to service account
+	driveService := services.GetDriveService(db, cfg.Google.ServiceAccountKey, cfg.Google.DriveFolderID, cfg.Google.ImpersonateEmail)
 	compressService := services.NewCompressService()
 
 	// Handlers
@@ -28,6 +28,7 @@ func Setup(r *gin.Engine, db *sql.DB, cfg *config.Config) {
 	shareHandler := handlers.NewShareHandler(db)
 	exportHandler := handlers.NewExportHandler(db)
 	queueHandler := handlers.NewQueueHandler(db)
+	driveOAuthHandler := handlers.NewDriveOAuthHandler(db)
 
 	// Middleware
 	authMiddleware := middleware.NewAuthMiddleware(cfg.JWT.Secret)
@@ -148,9 +149,19 @@ func Setup(r *gin.Engine, db *sql.DB, cfg *config.Config) {
 		admin.POST("/custom-fields", adminHandler.CreateCustomField)
 		admin.DELETE("/custom-fields/:id", adminHandler.DeleteCustomField)
 
+		// Google Drive OAuth
+		admin.POST("/drive/credentials", driveOAuthHandler.SaveCredentials)
+		admin.GET("/drive/auth-url", driveOAuthHandler.GetAuthURL)
+		admin.GET("/drive/status", driveOAuthHandler.Status)
+		admin.POST("/drive/disconnect", driveOAuthHandler.Disconnect)
+		admin.PUT("/drive/folder", driveOAuthHandler.UpdateFolder)
+
 		// Trash - super_admin only
 		admin.GET("/trash", rbacMiddleware.RequireRole("super_admin"), docHandler.ListTrash)
 	}
+
+	// Drive OAuth callback (public - Google redirects here)
+	api.GET("/admin/drive/callback", driveOAuthHandler.Callback)
 
 	// Super admin only routes (restore, permanent actions)
 	superAdmin := api.Group("/admin")
