@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"os"
@@ -13,10 +14,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 
 	"github.com/haydary1986/archiving-qa/internal/config"
 	"github.com/haydary1986/archiving-qa/internal/models"
 	"github.com/haydary1986/archiving-qa/internal/services"
+	"github.com/haydary1986/archiving-qa/internal/workers"
 )
 
 type DocumentHandler struct {
@@ -573,20 +576,31 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 		}
 	}
 
-	// Upload to Google Drive
-	f, _ := os.Open(processedFile)
-	defer f.Close()
-
 	mimeType := header.Header.Get("Content-Type")
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
-
 	fileName := fmt.Sprintf("%s_%s", docID, header.Filename)
-	driveFileID, driveURL, err := h.driveService.UploadFile(c, fileName, f, mimeType, h.cfg.Google.DriveFolderID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "خطأ في رفع الملف إلى Drive", "details": err.Error()})
-		return
+
+	// Upload to Google Drive
+	var driveFileID, driveURL string
+	if h.driveService != nil {
+		f, err := os.Open(processedFile)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "خطأ في قراءة الملف"})
+			return
+		}
+		defer f.Close()
+
+		driveFileID, driveURL, err = h.driveService.UploadFile(c, fileName, f, mimeType, h.cfg.Google.DriveFolderID)
+		if err != nil {
+			log.Printf("Drive upload failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "خطأ في رفع الملف إلى Drive", "details": err.Error()})
+			return
+		}
+		log.Printf("File uploaded to Drive: %s (URL: %s)", driveFileID, driveURL)
+	} else {
+		log.Println("WARNING: Drive service not configured, skipping Drive upload")
 	}
 
 	// Get file size
@@ -610,8 +624,23 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 		&fileRecord.UploadedByID, &fileRecord.CreatedAt,
 	)
 	if err != nil {
+		log.Printf("Failed to save file record: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "خطأ في حفظ معلومات الملف"})
 		return
+	}
+
+	// Enqueue OCR task
+	asynqClient := asynq.NewClient(asynq.RedisClientOpt{
+		Addr:     h.cfg.Redis.Addr(),
+		Password: h.cfg.Redis.Password,
+		DB:       h.cfg.Redis.DB,
+	})
+	defer asynqClient.Close()
+
+	if err := workers.EnqueueOCR(asynqClient, fileRecord.ID.String(), docID, mimeType); err != nil {
+		log.Printf("Failed to enqueue OCR task: %v", err)
+	} else {
+		log.Printf("OCR task enqueued for file: %s", fileRecord.ID)
 	}
 
 	uid, _ := uuid.Parse(userID)
