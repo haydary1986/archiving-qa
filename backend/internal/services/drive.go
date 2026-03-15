@@ -4,20 +4,26 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
+	"os"
+
 
 	"github.com/haydary1986/archiving-qa/internal/config"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 )
 
 // DriveService handles interactions with Google Drive API.
 type DriveService struct {
-	client        *drive.Service
-	rootFolderID  string
+	client       *drive.Service
+	rootFolderID string
 }
 
 // NewDriveService initializes a new DriveService using the provided Google configuration.
 // It supports both a file path and inline JSON for the service account key.
+// If GOOGLE_IMPERSONATE_EMAIL is set, the service account will impersonate that user
+// (requires domain-wide delegation enabled in Google Admin Console).
 func NewDriveService(cfg *config.GoogleConfig) (*DriveService, error) {
 	if cfg.ServiceAccountKey == "" {
 		return nil, fmt.Errorf("google service account key not configured")
@@ -25,17 +31,43 @@ func NewDriveService(cfg *config.GoogleConfig) (*DriveService, error) {
 
 	ctx := context.Background()
 
-	var opts []option.ClientOption
-	// If it starts with '{', treat as inline JSON; otherwise as file path
+	// Read key data
+	var keyData []byte
 	if len(cfg.ServiceAccountKey) > 0 && cfg.ServiceAccountKey[0] == '{' {
-		opts = append(opts, option.WithCredentialsJSON([]byte(cfg.ServiceAccountKey)))
+		keyData = []byte(cfg.ServiceAccountKey)
 	} else {
-		opts = append(opts, option.WithCredentialsFile(cfg.ServiceAccountKey))
+		var err error
+		keyData, err = os.ReadFile(cfg.ServiceAccountKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read service account key file: %w", err)
+		}
 	}
 
-	srv, err := drive.NewService(ctx, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create drive service: %w", err)
+	impersonateEmail := cfg.ImpersonateEmail
+
+	var srv *drive.Service
+	var err error
+
+	if impersonateEmail != "" {
+		// Use domain-wide delegation to impersonate a real user (avoids storage quota issue)
+		log.Printf("Drive: using impersonation as %s", impersonateEmail)
+		jwtCfg, err := google.JWTConfigFromJSON(keyData, drive.DriveScope)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse service account key: %w", err)
+		}
+		jwtCfg.Subject = impersonateEmail
+		client := jwtCfg.Client(ctx)
+		srv, err = drive.NewService(ctx, option.WithHTTPClient(client))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create drive service with impersonation: %w", err)
+		}
+	} else {
+		// Direct service account (works with Shared Drives)
+		log.Println("Drive: using direct service account (requires Shared Drive)")
+		srv, err = drive.NewService(ctx, option.WithCredentialsJSON(keyData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create drive service: %w", err)
+		}
 	}
 
 	return &DriveService{

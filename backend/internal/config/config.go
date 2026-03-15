@@ -43,11 +43,12 @@ type JWTConfig struct {
 }
 
 type GoogleConfig struct {
-	ClientID         string
-	ClientSecret     string
-	RedirectURL      string
+	ClientID          string
+	ClientSecret      string
+	RedirectURL       string
 	ServiceAccountKey string
-	DriveFolderID    string
+	DriveFolderID     string
+	ImpersonateEmail  string
 }
 
 type AIConfig struct {
@@ -90,11 +91,12 @@ func Load() *Config {
 			RefreshSecret:   getEnv("JWT_REFRESH_SECRET", "change-me-refresh-secret"),
 		},
 		Google: GoogleConfig{
-			ClientID:         getEnv("GOOGLE_CLIENT_ID", ""),
-			ClientSecret:     getEnv("GOOGLE_CLIENT_SECRET", ""),
-			RedirectURL:      getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/v1/auth/google/callback"),
+			ClientID:          getEnv("GOOGLE_CLIENT_ID", ""),
+			ClientSecret:      getEnv("GOOGLE_CLIENT_SECRET", ""),
+			RedirectURL:       getEnv("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/v1/auth/google/callback"),
 			ServiceAccountKey: getEnv("GOOGLE_SERVICE_ACCOUNT_KEY", ""),
-			DriveFolderID:    getEnv("GOOGLE_DRIVE_FOLDER_ID", ""),
+			DriveFolderID:     getEnv("GOOGLE_DRIVE_FOLDER_ID", ""),
+			ImpersonateEmail:  getEnv("GOOGLE_IMPERSONATE_EMAIL", ""),
 		},
 		AI: AIConfig{
 			Provider: getEnv("AI_PROVIDER", "ollama"),
