@@ -65,6 +65,12 @@ func Setup(r *gin.Engine, db *sql.DB, cfg *config.Config) {
 			docs.POST("/:id/files", rbacMiddleware.RequirePermission("files", "create"), docHandler.UploadFile)
 		}
 
+		// Entities (source/dest)
+		protected.GET("/entities", docHandler.ListEntities)
+
+		// Quick person creation (for document form inline add)
+		protected.POST("/persons/quick", rbacMiddleware.RequirePermission("documents", "create"), personHandler.Create)
+
 		// Routings
 		protected.POST("/routings", rbacMiddleware.RequirePermission("documents", "update"), docHandler.AddRouting)
 

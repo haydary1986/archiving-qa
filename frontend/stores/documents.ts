@@ -90,6 +90,13 @@ export const useDocumentStore = defineStore('documents', {
       this.persons = await api.get<Person[]>('/persons', { search })
     },
 
+    async createPerson(data: { full_name: string; person_type: string }) {
+      const api = useApi()
+      const person = await api.post<Person>('/persons/quick', data)
+      this.persons.push(person)
+      return person
+    },
+
     setFilters(filters: DocumentFilter) {
       this.filters = { ...this.filters, ...filters }
     },

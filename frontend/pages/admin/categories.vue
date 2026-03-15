@@ -6,12 +6,16 @@
     </div>
 
     <UCard>
-      <div class="space-y-2">
+      <div class="space-y-1">
         <template v-for="cat in categories" :key="cat.id">
+          <!-- Parent category -->
           <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
             <div class="flex items-center gap-2">
               <UIcon name="i-heroicons-folder" class="w-5 h-5 text-yellow-500" />
               <span class="font-medium">{{ cat.name }}</span>
+              <UBadge v-if="cat.children?.length" variant="subtle" size="xs">
+                {{ cat.children.length }}
+              </UBadge>
             </div>
             <div class="flex gap-1">
               <UButton icon="i-heroicons-plus" variant="ghost" size="xs" @click="openCreate(cat.id)" title="إضافة تصنيف فرعي" />
@@ -19,18 +23,35 @@
               <UButton icon="i-heroicons-trash" variant="ghost" color="red" size="xs" @click="deleteCategory(cat.id)" />
             </div>
           </div>
-          <!-- Children -->
-          <div v-for="child in cat.children" :key="child.id"
-               class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 mr-8">
-            <div class="flex items-center gap-2">
-              <UIcon name="i-heroicons-folder-open" class="w-5 h-5 text-blue-500" />
-              <span>{{ child.name }}</span>
+          <!-- Children (level 1) -->
+          <template v-for="child in cat.children" :key="child.id">
+            <div class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 mr-8">
+              <div class="flex items-center gap-2">
+                <UIcon name="i-heroicons-folder-open" class="w-4 h-4 text-blue-500" />
+                <span>{{ child.name }}</span>
+                <UBadge v-if="child.children?.length" variant="subtle" size="xs">
+                  {{ child.children.length }}
+                </UBadge>
+              </div>
+              <div class="flex gap-1">
+                <UButton icon="i-heroicons-plus" variant="ghost" size="xs" @click="openCreate(child.id)" title="إضافة تصنيف فرعي" />
+                <UButton icon="i-heroicons-pencil" variant="ghost" size="xs" @click="editCategory(child)" />
+                <UButton icon="i-heroicons-trash" variant="ghost" color="red" size="xs" @click="deleteCategory(child.id)" />
+              </div>
             </div>
-            <div class="flex gap-1">
-              <UButton icon="i-heroicons-pencil" variant="ghost" size="xs" @click="editCategory(child)" />
-              <UButton icon="i-heroicons-trash" variant="ghost" color="red" size="xs" @click="deleteCategory(child.id)" />
+            <!-- Children (level 2) -->
+            <div v-for="grandchild in child.children" :key="grandchild.id"
+                 class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 mr-16">
+              <div class="flex items-center gap-2">
+                <UIcon name="i-heroicons-document" class="w-4 h-4 text-gray-500" />
+                <span class="text-sm">{{ grandchild.name }}</span>
+              </div>
+              <div class="flex gap-1">
+                <UButton icon="i-heroicons-pencil" variant="ghost" size="xs" @click="editCategory(grandchild)" />
+                <UButton icon="i-heroicons-trash" variant="ghost" color="red" size="xs" @click="deleteCategory(grandchild.id)" />
+              </div>
             </div>
-          </div>
+          </template>
         </template>
 
         <p v-if="!categories.length" class="text-center text-gray-500 py-8">
@@ -47,6 +68,13 @@
         <div class="space-y-4">
           <UFormGroup label="اسم التصنيف" required>
             <UInput v-model="form.name" />
+          </UFormGroup>
+          <UFormGroup label="التصنيف الأب">
+            <USelect
+              v-model="form.parent_id"
+              :options="parentOptions"
+              placeholder="بدون تصنيف أب (تصنيف رئيسي)"
+            />
           </UFormGroup>
           <UFormGroup label="الترتيب">
             <UInput v-model.number="form.sort_order" type="number" />
@@ -78,6 +106,26 @@ const form = reactive({
   name: '',
   parent_id: null as string | null,
   sort_order: 0,
+})
+
+// Flatten categories for parent selector (exclude the one being edited and its children)
+const parentOptions = computed(() => {
+  const options: { value: string | null; label: string }[] = [
+    { value: null, label: 'بدون (تصنيف رئيسي)' }
+  ]
+  const editingId = editing.value?.id
+  const flatten = (cats: Category[], level = 0) => {
+    for (const cat of cats) {
+      if (cat.id === editingId) continue
+      const prefix = level > 0 ? '  '.repeat(level) + '┗ ' : ''
+      options.push({ value: cat.id, label: `${prefix}${cat.name}` })
+      if (cat.children?.length) {
+        flatten(cat.children, level + 1)
+      }
+    }
+  }
+  flatten(categories.value)
+  return options
 })
 
 const openCreate = (parentId?: string) => {

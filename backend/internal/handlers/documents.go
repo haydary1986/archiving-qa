@@ -658,6 +658,33 @@ func (h *DocumentHandler) logAudit(c *gin.Context, userID uuid.UUID, action, res
 	`, userID, action, resource, resourceID, detailsJSON, c.ClientIP(), c.Request.UserAgent())
 }
 
+func (h *DocumentHandler) ListEntities(c *gin.Context) {
+	rows, err := h.db.Query(`
+		SELECT DISTINCT entity FROM (
+			SELECT source_entity AS entity FROM documents WHERE source_entity != '' AND deleted_at IS NULL
+			UNION
+			SELECT dest_entity AS entity FROM documents WHERE dest_entity != '' AND deleted_at IS NULL
+		) sub ORDER BY entity
+	`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "خطأ في جلب الجهات"})
+		return
+	}
+	defer rows.Close()
+
+	var entities []string
+	for rows.Next() {
+		var e string
+		rows.Scan(&e)
+		entities = append(entities, e)
+	}
+	if entities == nil {
+		entities = []string{}
+	}
+
+	c.JSON(http.StatusOK, entities)
+}
+
 func isImageFile(ext string) bool {
 	switch ext {
 	case ".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".webp":

@@ -31,18 +31,31 @@
             <USelect v-model="form.classification" :options="classOptions" />
           </UFormGroup>
 
-          <UFormGroup label="الجهة المصدرة" v-if="form.document_type === 'incoming'">
-            <UInput v-model="form.source_entity" placeholder="مثال: وزارة التعليم العالي" />
+          <!-- Source Entity - searchable dropdown with add new -->
+          <UFormGroup label="الجهة المصدرة" v-if="form.document_type !== 'outgoing'">
+            <SearchableCombobox
+              v-model="form.source_entity"
+              :options="entityOptions"
+              placeholder="ابحث أو أضف جهة مصدرة..."
+              @add-new="addNewEntity"
+            />
           </UFormGroup>
 
-          <UFormGroup label="الجهة المستلمة" v-if="form.document_type === 'outgoing'">
-            <UInput v-model="form.dest_entity" placeholder="مثال: رئاسة الجامعة" />
+          <!-- Dest Entity - searchable dropdown with add new -->
+          <UFormGroup label="الجهة المستلمة" v-if="form.document_type !== 'incoming'">
+            <SearchableCombobox
+              v-model="form.dest_entity"
+              :options="entityOptions"
+              placeholder="ابحث أو أضف جهة مستلمة..."
+              @add-new="addNewEntity"
+            />
           </UFormGroup>
 
+          <!-- Category with tree support -->
           <UFormGroup label="التصنيف">
             <USelect
               v-model="form.category_id"
-              :options="categoryOptions"
+              :options="flatCategoryOptions"
               placeholder="اختر التصنيف"
             />
           </UFormGroup>
@@ -69,16 +82,17 @@
           </div>
         </UFormGroup>
 
-        <!-- Persons -->
+        <!-- Persons - searchable with add new -->
         <UFormGroup label="الأشخاص ذوو العلاقة">
           <div class="space-y-2">
             <div v-for="(person, idx) in selectedPersons" :key="idx"
                  class="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
-              <USelect
+              <SearchableCombobox
                 v-model="person.person_id"
                 :options="personOptions"
-                placeholder="اختر شخص"
+                placeholder="ابحث عن شخص أو أضف جديد..."
                 class="flex-1"
+                @add-new="(name: string) => addNewPerson(name, idx)"
               />
               <USelect
                 v-model="person.relation"
@@ -140,7 +154,10 @@
 </template>
 
 <script setup lang="ts">
+import type { Category } from '~/types'
+
 const store = useDocumentStore()
+const api = useApi()
 const toast = useToast()
 
 const fileInput = ref<HTMLInputElement>()
@@ -163,6 +180,9 @@ const selectedTags = ref<string[]>([])
 const selectedPersons = ref<{ person_id: string; relation: string }[]>([])
 const selectedFiles = ref<File[]>([])
 
+// Entities list (source/dest entities from existing documents)
+const entities = ref<string[]>([])
+
 const typeOptions = [
   { value: 'incoming', label: 'وارد' },
   { value: 'outgoing', label: 'صادر' },
@@ -182,13 +202,53 @@ const relationOptions = [
   { value: 'cc', label: 'نسخة' },
 ]
 
-const categoryOptions = computed(() =>
-  store.categories.map(c => ({ value: c.id, label: c.name }))
+// Flatten categories tree for dropdown with indentation
+const flatCategoryOptions = computed(() => {
+  const options: { value: string; label: string }[] = []
+  const flatten = (cats: Category[], level = 0) => {
+    for (const cat of cats) {
+      const prefix = level > 0 ? '┗ '.padStart(level * 3 + 2, '  ') : ''
+      options.push({ value: cat.id, label: `${prefix}${cat.name}` })
+      if (cat.children?.length) {
+        flatten(cat.children, level + 1)
+      }
+    }
+  }
+  flatten(store.categories)
+  return options
+})
+
+// Entity options for searchable combobox
+const entityOptions = computed(() =>
+  entities.value.map(e => ({ value: e, label: e }))
 )
 
+// Person options for searchable combobox
 const personOptions = computed(() =>
-  store.persons.map(p => ({ value: p.id, label: `${p.full_name} - ${p.department || ''}` }))
+  store.persons.map(p => ({
+    value: p.id,
+    label: `${p.full_name}${p.department ? ' - ' + p.department : ''}`
+  }))
 )
+
+const addNewEntity = (name: string) => {
+  if (name && !entities.value.includes(name)) {
+    entities.value.push(name)
+  }
+}
+
+const addNewPerson = async (name: string, idx: number) => {
+  try {
+    const person = await store.createPerson({
+      full_name: name,
+      person_type: 'employee',
+    })
+    selectedPersons.value[idx].person_id = person.id
+    toast.add({ title: `تمت إضافة "${name}" بنجاح`, color: 'green' })
+  } catch {
+    toast.add({ title: 'خطأ في إضافة الشخص', color: 'red' })
+  }
+}
 
 const toggleTag = (id: string) => {
   const idx = selectedTags.value.indexOf(id)
@@ -220,6 +280,15 @@ const formatFileSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Fetch existing entities from dedicated endpoint
+const fetchEntities = async () => {
+  try {
+    entities.value = await api.get<string[]>('/entities')
+  } catch {
+    // Ignore
+  }
 }
 
 const handleSubmit = async () => {
@@ -271,6 +340,7 @@ onMounted(async () => {
     store.fetchCategories(),
     store.fetchTags(),
     store.fetchPersons(),
+    fetchEntities(),
   ])
 })
 </script>
